@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Azure VM SKU Price Report</title>
+    <title>Azure VM SKU Analyzer by Luis Feliz</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a1a; }
@@ -63,16 +63,19 @@
         .sku-popup td { padding: 0.2rem 0.4rem; vertical-align: top; border-bottom: 1px solid #f5f5f5; }
         .sku-popup td:first-child { font-weight: 600; color: #444; white-space: nowrap; width: 40%; }
         .sku-popup td:last-child { color: #222; word-break: break-word; white-space: normal; }
+
+        .copy-btn { background: none; border: none; cursor: pointer; padding: 0 0.3rem; opacity: 0.4; vertical-align: middle; font-size: 0.85rem; line-height: 1; }
+        .copy-btn:hover { opacity: 1; }
+        .copy-btn.copied { opacity: 1; color: #28a745; }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>Azure VM SKU Price Report by Region</h1>
-        <div class="subtitle">Browse and filter VM pricing across Azure regions</div>
+        <h1>Azure VM SKU Analyzer</h1>        
     </div>
 
     <div style="background: #fff3cd; color: #664d03; padding: 0.5rem 2rem; font-size: 0.85rem; font-weight: 600; border-bottom: 1px solid #ffecb5;">
-        Price data refresh as of 5/23/2026 - All prices are MSRP before any discounts/deals
+        Price data refresh as of <span id="data-date">...</span> - All prices are MSRP before any discounts/deals
     </div>
 
     <div class="filters-panel" id="filters">
@@ -117,14 +120,18 @@
             <div class="multi-select" id="filter-features-ms"></div>
         </div>
         <div class="filter-group">
-            <label>Has Price In</label>
+            <label>Available in these regions</label>
             <div class="multi-select" id="filter-has-price-ms"></div>
         </div>
     </div>
 
     <div class="toolbar">
-        <span class="count" id="result-count">Loading...</span>
+        <div style="display:flex;align-items:center;gap:0.75rem;overflow:hidden;flex:1;min-width:0;">
+            <span class="count" id="result-count" style="white-space:nowrap;">Loading...</span>
+            <span id="active-filters" style="font-size:0.8rem;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:none;"></span>
+        </div>
         <div style="display:flex;gap:0.5rem;">
+            <button id="btn-share" title="Share current view">&#128279; Share</button>
             <button id="btn-export-csv">Export CSV</button>
             <button id="btn-reset">Reset Filters</button>
         </div>
@@ -141,6 +148,17 @@
     <div class="pagination" id="pagination"></div>
     <div class="sku-popup" id="sku-popup" style="display:none;"></div>
 
+    <div id="share-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:2000;justify-content:center;align-items:center;">
+        <div style="background:white;border-radius:8px;padding:1.5rem;max-width:500px;width:90%;box-shadow:0 8px 24px rgba(0,0,0,0.2);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <h3 style="margin:0;font-size:1rem;">Share this view</h3>
+                <button id="share-close" style="background:none;border:none;font-size:1.2rem;cursor:pointer;">&times;</button>
+            </div>
+            <input id="share-url" type="text" readonly style="width:100%;padding:0.5rem;font-size:0.8rem;border:1px solid #ccc;border-radius:4px;margin-bottom:0.75rem;">
+            <button id="share-copy-btn" style="background:#0078d4;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;font-size:0.85rem;">&#128203; Copy URL</button>
+        </div>
+    </div>
+
     <script>
         const PAGE_SIZE = 50;
         let allData = [];
@@ -155,7 +173,11 @@
         async function init() {
             const resp = await fetch('sku-price-report-by-region.json');
             allData = await resp.json();
+            if (allData.length && allData[0].Date) {
+                document.getElementById('data-date').textContent = allData[0].Date;
+            }
             populateDropdowns();
+            loadFiltersFromURL();
             applyFilters();
             renderTableHead();
             bindEvents();
@@ -295,6 +317,107 @@
             if (sortCol) sortData();
             currentPage = 1;
             renderTable();
+            renderActiveFilters();
+            updateURLFromFilters();
+        }
+
+        function renderActiveFilters() {
+            const parts = [];
+            const sku = document.getElementById('filter-sku').value;
+            if (sku) parts.push('SKU: ' + sku);
+            const category = document.getElementById('filter-category').value;
+            if (category) parts.push('Category: ' + category);
+            const osValues = getMultiSelectValues('filter-os-ms');
+            if (osValues.length) parts.push('OS: ' + osValues.join(', '));
+            const meterTypeValues = getMultiSelectValues('filter-meter-type-ms');
+            if (meterTypeValues.length) parts.push('Meter: ' + meterTypeValues.join(', '));
+            const cpuVendorValues = getMultiSelectValues('filter-cpu-vendor-ms');
+            if (cpuVendorValues.length) parts.push('CPU: ' + cpuVendorValues.join(', '));
+            const versionValues = getMultiSelectValues('filter-version-ms');
+            if (versionValues.length) parts.push('Version: ' + versionValues.join(', '));
+            const memoryRatioValues = getMultiSelectValues('filter-memory-ratio-ms');
+            if (memoryRatioValues.length) parts.push('Mem Ratio: ' + memoryRatioValues.join(', '));
+            const vcpuValues = getMultiSelectValues('filter-vcpus-ms');
+            if (vcpuValues.length) parts.push('vCPUs: ' + vcpuValues.join(', '));
+            const memoryValues = getMultiSelectValues('filter-memory-ms');
+            if (memoryValues.length) parts.push('Memory: ' + memoryValues.join(', '));
+            const featuresValues = getMultiSelectValues('filter-features-ms');
+            if (featuresValues.length) parts.push('Features: ' + featuresValues.join(', '));
+            const hasPriceValues = getMultiSelectValues('filter-has-price-ms');
+            if (hasPriceValues.length) parts.push('Available in: ' + hasPriceValues.join(', '));
+
+            const el = document.getElementById('active-filters');
+            if (parts.length) {
+                el.textContent = parts.join(' | ');
+                el.style.display = 'block';
+            } else {
+                el.style.display = 'none';
+            }
+        }
+
+        const filterParamMap = [
+            { id: 'filter-sku', param: 'sku', type: 'input' },
+            { id: 'filter-category', param: 'category', type: 'select' },
+            { id: 'filter-os-ms', param: 'os', type: 'multi' },
+            { id: 'filter-meter-type-ms', param: 'meter', type: 'multi' },
+            { id: 'filter-cpu-vendor-ms', param: 'cpu', type: 'multi' },
+            { id: 'filter-version-ms', param: 'version', type: 'multi' },
+            { id: 'filter-memory-ratio-ms', param: 'memratio', type: 'multi' },
+            { id: 'filter-vcpus-ms', param: 'vcpus', type: 'multi' },
+            { id: 'filter-memory-ms', param: 'memory', type: 'multi' },
+            { id: 'filter-features-ms', param: 'features', type: 'multi' },
+            { id: 'filter-has-price-ms', param: 'regions', type: 'multi' },
+        ];
+
+        function updateURLFromFilters() {
+            const params = new URLSearchParams();
+            filterParamMap.forEach(({ id, param, type }) => {
+                if (type === 'multi') {
+                    const vals = getMultiSelectValues(id);
+                    if (vals.length) params.set(param, vals.join(','));
+                } else {
+                    const el = document.getElementById(id);
+                    if (el.value) params.set(param, el.value);
+                }
+            });
+            const qs = params.toString();
+            const newUrl = window.location.pathname + (qs ? '?' + qs : '');
+            history.replaceState(null, '', newUrl);
+        }
+
+        function loadFiltersFromURL() {
+            const params = new URLSearchParams(window.location.search);
+            if (!params.toString()) return;
+            filterParamMap.forEach(({ id, param, type }) => {
+                const val = params.get(param);
+                if (!val) return;
+                if (type === 'input') {
+                    document.getElementById(id).value = val;
+                } else if (type === 'select') {
+                    document.getElementById(id).value = val;
+                } else if (type === 'multi') {
+                    const values = val.split(',');
+                    const container = document.getElementById(id);
+                    container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                        cb.checked = values.includes(cb.value);
+                    });
+                    updateMultiSelectLabel(container);
+                }
+            });
+        }
+
+        function getShareURL() {
+            return window.location.href;
+        }
+
+        function showSharePopup() {
+            const overlay = document.getElementById('share-overlay');
+            document.getElementById('share-url').value = getShareURL();
+            overlay.style.display = 'flex';
+        }
+
+        function hideSharePopup() {
+            document.getElementById('share-overlay').style.display = 'none';
         }
 
         function sortData() {
@@ -340,8 +463,9 @@
                     if (col === 'vCPUs' || col === 'Memory_GB') {
                         return `<td class="num-col">${val}</td>`;
                     }
-                    if (col === 'SKU' && r.DocumentPath) {
-                        return `<td><a href="${r.DocumentPath}" target="_blank">${val}</a></td>`;
+                    if (col === 'SKU') {
+                        const link = r.DocumentPath ? `<a href="${r.DocumentPath}" target="_blank">${val}</a>` : val;
+                        return `<td><button class="copy-btn" data-sku="${val}" title="Copy SKU">&#128203;</button>${link}</td>`;
                     }
                     return `<td>${val}</td>`;
                 }).join('');
@@ -403,6 +527,20 @@
             });
 
             document.getElementById('btn-export-csv').addEventListener('click', exportCSV);
+
+            document.getElementById('btn-share').addEventListener('click', showSharePopup);
+            document.getElementById('share-close').addEventListener('click', hideSharePopup);
+            document.getElementById('share-overlay').addEventListener('click', e => {
+                if (e.target === e.currentTarget) hideSharePopup();
+            });
+            document.getElementById('share-copy-btn').addEventListener('click', () => {
+                const urlInput = document.getElementById('share-url');
+                navigator.clipboard.writeText(urlInput.value).then(() => {
+                    const btn = document.getElementById('share-copy-btn');
+                    btn.textContent = '✓ Copied!';
+                    setTimeout(() => { btn.innerHTML = '&#128203; Copy URL'; }, 1500);
+                });
+            });
         }
 
         function exportCSV() {
@@ -457,14 +595,32 @@
             const popup = skuPopup;
             let x = e.clientX + 16;
             let y = e.clientY + 12;
-            const rect = popup.getBoundingClientRect();
-            if (x + popup.offsetWidth > window.innerWidth - 12) x = e.clientX - popup.offsetWidth - 12;
-            if (y + popup.offsetHeight > window.innerHeight - 12) y = e.clientY - popup.offsetHeight - 12;
+            const pw = popup.offsetWidth;
+            const ph = popup.offsetHeight;
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+
+            if (x + pw > vw - 12) x = Math.max(12, e.clientX - pw - 12);
+            if (y + ph > vh - 12) y = Math.max(12, vh - ph - 12);
+
             popup.style.left = x + 'px';
             popup.style.top = y + 'px';
+            popup.style.maxHeight = (vh - 24) + 'px';
+            popup.style.overflowY = 'auto';
         }
 
         function hideSkuPopup() { skuPopup.style.display = 'none'; }
+
+        document.getElementById('table-body').addEventListener('click', e => {
+            const btn = e.target.closest('.copy-btn');
+            if (!btn) return;
+            const sku = btn.dataset.sku;
+            navigator.clipboard.writeText(sku).then(() => {
+                btn.classList.add('copied');
+                btn.innerHTML = '&#10003;';
+                setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = '&#128203;'; }, 1500);
+            });
+        });
 
         document.getElementById('table-body').addEventListener('mouseover', e => {
             const td = e.target.closest('td');
