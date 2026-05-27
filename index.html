@@ -419,7 +419,7 @@
                 if (memoryValues.length && !memoryValues.includes(String(r.Memory_GB))) return false;
                 if (featuresValues.length) {
                     const rowFeatures = r.Features ? r.Features.split(';').map(f => f.trim()) : [];
-                    if (!featuresValues.some(f => rowFeatures.includes(f))) return false;
+                    if (!featuresValues.every(f => rowFeatures.includes(f))) return false;
                 }
                 if (hideFeaturesValues.length) {
                     const rowFeatures = r.Features ? r.Features.split(';').map(f => f.trim()) : [];
