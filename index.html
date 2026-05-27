@@ -71,7 +71,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>Azure VM SKU Analyzer</h1>        
+        <h1>Azure VM SKU Analyzer v1.1</h1>        
     </div>
 
     <div style="background: #fff3cd; color: #664d03; padding: 0.5rem 2rem; font-size: 0.85rem; font-weight: 600; border-bottom: 1px solid #ffecb5;">
@@ -102,6 +102,10 @@
         <div class="filter-group">
             <label>CPU Vendor</label>
             <div class="multi-select" id="filter-cpu-vendor-ms"></div>
+        </div>
+        <div class="filter-group">
+            <label>CPU Type</label>
+            <div class="multi-select" id="filter-cpu-type-ms"></div>
         </div>
         <div class="filter-group">
             <label>Version</label>
@@ -164,7 +168,7 @@
     </div>
 
     <script>
-        const PAGE_SIZE = 50;
+        const PAGE_SIZE = 150;
         let allData = [];
         let filteredData = [];
         let currentPage = 1;
@@ -172,7 +176,7 @@
         let sortDir = 'asc';
         const regionCols = ['centralus', 'eastus', 'eastus2',"westus3","northcentralus","southcentralus"];
         const metaCols = ['SKU', 'Version', 'vCPUs', 'Memory_GB', 'Category', 'OSType', 'MeterType', 'CPUVendor', 'Memory_Ratio', 'NetworkBandwidth', 'Notes'];
-        const displayCols = [...metaCols, ...regionCols];
+        const displayCols = [...metaCols, ...regionCols, 'CPUType', 'Features'];
 
         async function init() {
             const resp = await fetch('sku-price-report-by-region.json');
@@ -188,13 +192,14 @@
         }
 
         function populateDropdowns() {
-            const sets = { category: new Set(), family: new Set(), os: new Set(), meterType: new Set(), cpuVendor: new Set(), version: new Set(), memoryRatio: new Set(), vcpus: new Set(), memory: new Set(), features: new Set() };
+            const sets = { category: new Set(), family: new Set(), os: new Set(), meterType: new Set(), cpuVendor: new Set(), cpuType: new Set(), version: new Set(), memoryRatio: new Set(), vcpus: new Set(), memory: new Set(), features: new Set() };
             allData.forEach(r => {
                 if (r.Category) sets.category.add(r.Category);
                 if (r.Family) sets.family.add(r.Family);
                 if (r.OSType) sets.os.add(r.OSType);
                 if (r.MeterType) sets.meterType.add(r.MeterType);
                 if (r.CPUVendor) sets.cpuVendor.add(r.CPUVendor);
+                if (r.CPUType) sets.cpuType.add(r.CPUType);
                 if (r.Version) sets.version.add(r.Version);
                 if (r.Memory_Ratio) sets.memoryRatio.add(r.Memory_Ratio);
                 if (r.vCPUs) sets.vcpus.add(r.vCPUs);
@@ -206,12 +211,103 @@
             createMultiSelect('filter-os-ms', [...sets.os].sort());
             createMultiSelect('filter-meter-type-ms', [...sets.meterType].sort());
             createMultiSelect('filter-cpu-vendor-ms', [...sets.cpuVendor].sort());
+            createMultiSelect('filter-cpu-type-ms', [...sets.cpuType].sort());
             createMultiSelect('filter-version-ms', [...sets.version].sort());
             createMultiSelect('filter-memory-ratio-ms', [...sets.memoryRatio].sort());
             createMultiSelect('filter-vcpus-ms', [...sets.vcpus].sort((a, b) => a - b).map(String));
             createMultiSelect('filter-memory-ms', [...sets.memory].sort((a, b) => a - b).map(String));
             createMultiSelect('filter-features-ms', [...sets.features].sort());
             createMultiSelect('filter-has-price-ms', regionCols);
+        }
+
+        // Cascading filter chain - each filter's options based on data filtered by all preceding filters
+        const cascadeChain = [
+            { id: 'filter-category', field: 'Category', type: 'select' },
+            { id: 'filter-family-ms', field: 'Family', type: 'multi' },
+            { id: 'filter-os-ms', field: 'OSType', type: 'multi' },
+            { id: 'filter-meter-type-ms', field: 'MeterType', type: 'multi' },
+            { id: 'filter-cpu-vendor-ms', field: 'CPUVendor', type: 'multi' },
+            { id: 'filter-cpu-type-ms', field: 'CPUType', type: 'multi' },
+            { id: 'filter-version-ms', field: 'Version', type: 'multi' },
+            { id: 'filter-memory-ratio-ms', field: 'Memory_Ratio', type: 'multi' },
+            { id: 'filter-vcpus-ms', field: 'vCPUs', type: 'multi', numeric: true },
+            { id: 'filter-memory-ms', field: 'Memory_GB', type: 'multi', numeric: true },
+            { id: 'filter-features-ms', field: 'Features', type: 'multi', split: true },
+        ];
+
+        function getFilterValue(entry) {
+            if (entry.type === 'select') return document.getElementById(entry.id).value;
+            return getMultiSelectValues(entry.id);
+        }
+
+        function matchesFilter(row, entry, value) {
+            if (entry.type === 'select') return !value || row[entry.field] === value;
+            if (!value.length) return true;
+            if (entry.split) {
+                const rowVals = row[entry.field] ? row[entry.field].split(';').map(f => f.trim()) : [];
+                return value.some(v => rowVals.includes(v));
+            }
+            return value.includes(entry.numeric ? String(row[entry.field]) : row[entry.field]);
+        }
+
+        function refreshDropdownOptions() {
+            const sku = document.getElementById('filter-sku').value.toLowerCase();
+
+            for (let i = 0; i < cascadeChain.length; i++) {
+                // Filter data through all preceding filters (and SKU search)
+                let subset = allData;
+                if (sku) subset = subset.filter(r => r.SKU.toLowerCase().includes(sku));
+                for (let j = 0; j < i; j++) {
+                    const prev = cascadeChain[j];
+                    const val = getFilterValue(prev);
+                    subset = subset.filter(r => matchesFilter(r, prev, val));
+                }
+
+                const entry = cascadeChain[i];
+                const available = new Set();
+                subset.forEach(r => {
+                    if (entry.split) {
+                        if (r[entry.field]) r[entry.field].split(';').forEach(f => { f = f.trim(); if (f) available.add(f); });
+                    } else {
+                        const v = r[entry.field];
+                        if (v != null && v !== '') available.add(entry.numeric ? String(v) : v);
+                    }
+                });
+
+                if (entry.type === 'select') {
+                    updateSelectOptions(entry.id, available);
+                } else {
+                    updateMultiSelectOptions(entry.id, available, entry.numeric);
+                }
+            }
+        }
+
+        function updateSelectOptions(id, available) {
+            const sel = document.getElementById(id);
+            const current = sel.value;
+            const opts = sel.querySelectorAll('option');
+            opts.forEach(o => {
+                if (o.value === '') return; // keep "All"
+                o.disabled = !available.has(o.value);
+            });
+            if (current && !available.has(current)) {
+                sel.value = '';
+            }
+        }
+
+        function updateMultiSelectOptions(containerId, available, numeric) {
+            const container = document.getElementById(containerId);
+            const dropdown = container.querySelector('.multi-select-dropdown');
+            const labels = dropdown.querySelectorAll('label');
+            labels.forEach(lbl => {
+                const cb = lbl.querySelector('input[type="checkbox"]');
+                const isAvailable = available.has(cb.value);
+                lbl.style.display = isAvailable ? '' : 'none';
+                if (!isAvailable && cb.checked) {
+                    cb.checked = false;
+                }
+            });
+            updateMultiSelectLabel(container);
         }
 
         function fillSelect(id, values) {
@@ -285,12 +381,14 @@
         }
 
         function applyFilters() {
+            refreshDropdownOptions();
             const sku = document.getElementById('filter-sku').value.toLowerCase();
             const category = document.getElementById('filter-category').value;
             const familyValues = getMultiSelectValues('filter-family-ms');
             const osValues = getMultiSelectValues('filter-os-ms');
             const meterTypeValues = getMultiSelectValues('filter-meter-type-ms');
             const cpuVendorValues = getMultiSelectValues('filter-cpu-vendor-ms');
+            const cpuTypeValues = getMultiSelectValues('filter-cpu-type-ms');
             const versionValues = getMultiSelectValues('filter-version-ms');
             const memoryRatioValues = getMultiSelectValues('filter-memory-ratio-ms');
             const vcpuValues = getMultiSelectValues('filter-vcpus-ms');
@@ -305,6 +403,7 @@
                 if (osValues.length && !osValues.includes(r.OSType)) return false;
                 if (meterTypeValues.length && !meterTypeValues.includes(r.MeterType)) return false;
                 if (cpuVendorValues.length && !cpuVendorValues.includes(r.CPUVendor)) return false;
+                if (cpuTypeValues.length && !cpuTypeValues.includes(r.CPUType)) return false;
                 if (versionValues.length && !versionValues.includes(r.Version)) return false;
                 if (memoryRatioValues.length && !memoryRatioValues.includes(r.Memory_Ratio)) return false;
                 if (vcpuValues.length && !vcpuValues.includes(String(r.vCPUs))) return false;
@@ -342,7 +441,9 @@
             const meterTypeValues = getMultiSelectValues('filter-meter-type-ms');
             if (meterTypeValues.length) parts.push('Meter: ' + meterTypeValues.join(', '));
             const cpuVendorValues = getMultiSelectValues('filter-cpu-vendor-ms');
-            if (cpuVendorValues.length) parts.push('CPU: ' + cpuVendorValues.join(', '));
+            if (cpuVendorValues.length) parts.push('CPU Vendor: ' + cpuVendorValues.join(', '));
+            const cpuTypeValues = getMultiSelectValues('filter-cpu-type-ms');
+            if (cpuTypeValues.length) parts.push('CPU Type: ' + cpuTypeValues.join(', '));
             const versionValues = getMultiSelectValues('filter-version-ms');
             if (versionValues.length) parts.push('Version: ' + versionValues.join(', '));
             const memoryRatioValues = getMultiSelectValues('filter-memory-ratio-ms');
@@ -372,6 +473,7 @@
             { id: 'filter-os-ms', param: 'os', type: 'multi' },
             { id: 'filter-meter-type-ms', param: 'meter', type: 'multi' },
             { id: 'filter-cpu-vendor-ms', param: 'cpu', type: 'multi' },
+            { id: 'filter-cpu-type-ms', param: 'cputype', type: 'multi' },
             { id: 'filter-version-ms', param: 'version', type: 'multi' },
             { id: 'filter-memory-ratio-ms', param: 'memratio', type: 'multi' },
             { id: 'filter-vcpus-ms', param: 'vcpus', type: 'multi' },
