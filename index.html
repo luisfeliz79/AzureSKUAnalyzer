@@ -78,7 +78,7 @@
     </div>
 
     <div style="background: #fff3cd; color: #664d03; padding: 0.5rem 2rem; font-size: 0.85rem; font-weight: 600; border-bottom: 1px solid #ffecb5;">
-        Price data refresh as of <span id="data-date">...</span> - All prices are MSRP before any discounts/deals
+        Price data refresh as of <span id="data-date">...</span> - All prices are per hour, and based on MSRP before any discounts/deals
     </div>
 
     <div class="filters-panel" id="filters">
@@ -183,7 +183,7 @@
         let sortDir = 'asc';
         const regionCols = ['centralus', 'eastus', 'eastus2',"westus3","northcentralus","southcentralus"];
         const metaCols = ['SKU', 'Version', 'vCPUs', 'Memory_GB', 'Category', 'OSType', 'MeterType', 'CPUVendor', 'Memory_Ratio', 'NetworkBandwidth', 'Notes'];
-        const displayCols = [...metaCols, ...regionCols, 'CPUType', 'Features'];
+        const displayCols = [...metaCols, ...regionCols, 'CPUType', 'Features', 'Product Name'];
 
         async function init() {
             const resp = await fetch('sku-price-report-by-region.json');
