@@ -88,6 +88,10 @@
             <select id="filter-category"><option value="">All</option></select>
         </div>
         <div class="filter-group">
+            <label>Family</label>
+            <div class="multi-select" id="filter-family-ms"></div>
+        </div>
+        <div class="filter-group">
             <label>OS Type</label>
             <div class="multi-select" id="filter-os-ms"></div>
         </div>
@@ -184,9 +188,10 @@
         }
 
         function populateDropdowns() {
-            const sets = { category: new Set(), os: new Set(), meterType: new Set(), cpuVendor: new Set(), version: new Set(), memoryRatio: new Set(), vcpus: new Set(), memory: new Set(), features: new Set() };
+            const sets = { category: new Set(), family: new Set(), os: new Set(), meterType: new Set(), cpuVendor: new Set(), version: new Set(), memoryRatio: new Set(), vcpus: new Set(), memory: new Set(), features: new Set() };
             allData.forEach(r => {
                 if (r.Category) sets.category.add(r.Category);
+                if (r.Family) sets.family.add(r.Family);
                 if (r.OSType) sets.os.add(r.OSType);
                 if (r.MeterType) sets.meterType.add(r.MeterType);
                 if (r.CPUVendor) sets.cpuVendor.add(r.CPUVendor);
@@ -197,6 +202,7 @@
                 if (r.Features) r.Features.split(';').forEach(f => { f = f.trim(); if (f) sets.features.add(f); });
             });
             fillSelect('filter-category', [...sets.category].sort());
+            createMultiSelect('filter-family-ms', [...sets.family].sort());
             createMultiSelect('filter-os-ms', [...sets.os].sort());
             createMultiSelect('filter-meter-type-ms', [...sets.meterType].sort());
             createMultiSelect('filter-cpu-vendor-ms', [...sets.cpuVendor].sort());
@@ -281,6 +287,7 @@
         function applyFilters() {
             const sku = document.getElementById('filter-sku').value.toLowerCase();
             const category = document.getElementById('filter-category').value;
+            const familyValues = getMultiSelectValues('filter-family-ms');
             const osValues = getMultiSelectValues('filter-os-ms');
             const meterTypeValues = getMultiSelectValues('filter-meter-type-ms');
             const cpuVendorValues = getMultiSelectValues('filter-cpu-vendor-ms');
@@ -294,6 +301,7 @@
             filteredData = allData.filter(r => {
                 if (sku && !r.SKU.toLowerCase().includes(sku)) return false;
                 if (category && r.Category !== category) return false;
+                if (familyValues.length && !familyValues.includes(r.Family)) return false;
                 if (osValues.length && !osValues.includes(r.OSType)) return false;
                 if (meterTypeValues.length && !meterTypeValues.includes(r.MeterType)) return false;
                 if (cpuVendorValues.length && !cpuVendorValues.includes(r.CPUVendor)) return false;
@@ -327,6 +335,8 @@
             if (sku) parts.push('SKU: ' + sku);
             const category = document.getElementById('filter-category').value;
             if (category) parts.push('Category: ' + category);
+            const familyValues = getMultiSelectValues('filter-family-ms');
+            if (familyValues.length) parts.push('Family: ' + familyValues.join(', '));
             const osValues = getMultiSelectValues('filter-os-ms');
             if (osValues.length) parts.push('OS: ' + osValues.join(', '));
             const meterTypeValues = getMultiSelectValues('filter-meter-type-ms');
@@ -358,6 +368,7 @@
         const filterParamMap = [
             { id: 'filter-sku', param: 'sku', type: 'input' },
             { id: 'filter-category', param: 'category', type: 'select' },
+            { id: 'filter-family-ms', param: 'family', type: 'multi' },
             { id: 'filter-os-ms', param: 'os', type: 'multi' },
             { id: 'filter-meter-type-ms', param: 'meter', type: 'multi' },
             { id: 'filter-cpu-vendor-ms', param: 'cpu', type: 'multi' },
