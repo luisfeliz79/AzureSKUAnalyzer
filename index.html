@@ -17,11 +17,14 @@
         .filter-group label { font-size: 0.75rem; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
         .filter-group input, .filter-group select { padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem;  }
         .filter-group input:focus, .filter-group select:focus { outline: none; border-color: #0078d4; box-shadow: 0 0 0 2px rgba(0,120,212,0.2); }
+        .filter-group select.has-selection { border-color: #0078d4; background: #f0f7ff; box-shadow: 0 0 0 2px rgba(0,120,212,0.2); }
+        .filter-group input.has-selection { border-color: #0078d4; background: #f0f7ff; box-shadow: 0 0 0 2px rgba(0,120,212,0.2); }
 
         .multi-select { position: relative; min-width: 140px; }
         .multi-select-toggle { padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85rem; background: white; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; min-width: 140px; }
         .multi-select-toggle:focus { outline: none; border-color: #0078d4; box-shadow: 0 0 0 2px rgba(0,120,212,0.2); }
         .multi-select-toggle::after { content: '▾'; font-size: 0.7rem; color: #555; }
+        .multi-select-toggle.has-selection { border-color: #0078d4; background: #f0f7ff; box-shadow: 0 0 0 2px rgba(0,120,212,0.2); }
         .multi-select-dropdown { display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 200; max-height: 220px; overflow-y: auto; margin-top: 2px; min-width: 320px; }
         .multi-select-dropdown.open { display: block; }
         .multi-select-dropdown label { display: flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.6rem; cursor: pointer; font-size: 0.8rem; }
@@ -128,6 +131,10 @@
             <div class="multi-select" id="filter-features-ms"></div>
         </div>
         <div class="filter-group">
+            <label>Hide if feature</label>
+            <div class="multi-select" id="filter-hide-features-ms"></div>
+        </div>
+        <div class="filter-group">
             <label>Available in these regions</label>
             <div class="multi-select" id="filter-has-price-ms"></div>
         </div>
@@ -217,6 +224,7 @@
             createMultiSelect('filter-vcpus-ms', [...sets.vcpus].sort((a, b) => a - b).map(String));
             createMultiSelect('filter-memory-ms', [...sets.memory].sort((a, b) => a - b).map(String));
             createMultiSelect('filter-features-ms', [...sets.features].sort());
+            createMultiSelect('filter-hide-features-ms', [...sets.features].sort());
             createMultiSelect('filter-has-price-ms', regionCols);
         }
 
@@ -369,9 +377,9 @@
         function updateMultiSelectLabel(container) {
             const toggle = container.querySelector('.multi-select-toggle');
             const checked = [...container.querySelectorAll('input[type="checkbox"]:checked')];
-            if (checked.length === 0) toggle.textContent = 'All';
-            else if (checked.length === 1) toggle.textContent = checked[0].value;
-            else toggle.textContent = `${checked.length} selected`;
+            if (checked.length === 0) { toggle.textContent = 'All'; toggle.classList.remove('has-selection'); }
+            else if (checked.length === 1) { toggle.textContent = checked[0].value; toggle.classList.add('has-selection'); }
+            else { toggle.textContent = `${checked.length} selected`; toggle.classList.add('has-selection'); }
         }
 
         function getMultiSelectValues(containerId) {
@@ -394,6 +402,7 @@
             const vcpuValues = getMultiSelectValues('filter-vcpus-ms');
             const memoryValues = getMultiSelectValues('filter-memory-ms');
             const featuresValues = getMultiSelectValues('filter-features-ms');
+            const hideFeaturesValues = getMultiSelectValues('filter-hide-features-ms');
             const hasPriceValues = getMultiSelectValues('filter-has-price-ms');
 
             filteredData = allData.filter(r => {
@@ -411,6 +420,10 @@
                 if (featuresValues.length) {
                     const rowFeatures = r.Features ? r.Features.split(';').map(f => f.trim()) : [];
                     if (!featuresValues.some(f => rowFeatures.includes(f))) return false;
+                }
+                if (hideFeaturesValues.length) {
+                    const rowFeatures = r.Features ? r.Features.split(';').map(f => f.trim()) : [];
+                    if (hideFeaturesValues.some(f => rowFeatures.includes(f))) return false;
                 }
                 if (hasPriceValues.length) {
                     for (const region of hasPriceValues) {
@@ -454,6 +467,8 @@
             if (memoryValues.length) parts.push('Memory: ' + memoryValues.join(', '));
             const featuresValues = getMultiSelectValues('filter-features-ms');
             if (featuresValues.length) parts.push('Features: ' + featuresValues.join(', '));
+            const hideFeaturesValues = getMultiSelectValues('filter-hide-features-ms');
+            if (hideFeaturesValues.length) parts.push('Hide: ' + hideFeaturesValues.join(', '));
             const hasPriceValues = getMultiSelectValues('filter-has-price-ms');
             if (hasPriceValues.length) parts.push('Available in: ' + hasPriceValues.join(', '));
 
@@ -464,6 +479,12 @@
             } else {
                 el.style.display = 'none';
             }
+
+            // Highlight select/input with active values
+            const catEl = document.getElementById('filter-category');
+            catEl.classList.toggle('has-selection', catEl.value !== '');
+            const skuEl = document.getElementById('filter-sku');
+            skuEl.classList.toggle('has-selection', skuEl.value !== '');
         }
 
         const filterParamMap = [
@@ -479,6 +500,7 @@
             { id: 'filter-vcpus-ms', param: 'vcpus', type: 'multi' },
             { id: 'filter-memory-ms', param: 'memory', type: 'multi' },
             { id: 'filter-features-ms', param: 'features', type: 'multi' },
+            { id: 'filter-hide-features-ms', param: 'hidefeatures', type: 'multi' },
             { id: 'filter-has-price-ms', param: 'regions', type: 'multi' },
         ];
 
@@ -564,7 +586,7 @@
             const start = (currentPage - 1) * PAGE_SIZE;
             const page = filteredData.slice(start, start + PAGE_SIZE);
 
-            document.getElementById('result-count').textContent = `${filteredData.length.toLocaleString()} of ${allData.length.toLocaleString()} SKUs`;
+            document.getElementById('result-count').textContent = `${filteredData.length.toLocaleString()} of ${allData.length.toLocaleString()} SKU records`;
             document.getElementById('no-results').style.display = filteredData.length === 0 ? 'block' : 'none';
 
             tbody.innerHTML = page.map(r => {
