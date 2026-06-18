@@ -186,7 +186,7 @@
         const displayCols = [...metaCols, ...regionCols, 'CPUType', 'Features', 'Product Name'];
 
         async function init() {
-            const resp = await fetch('sku-price-report-by-region.json');
+            const resp = await fetch('data/sku-price-report-by-region.json');
             allData = await resp.json();
             if (allData.length && allData[0].Date) {
                 document.getElementById('data-date').textContent = allData[0].Date;
